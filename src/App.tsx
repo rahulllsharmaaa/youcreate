@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from './lib/supabase';
 import { Exam, Course, Question } from './types/database';
 import { Video, Database, CheckCircle, XCircle, Loader } from 'lucide-react';
-import InstagramReelCreator from './components/InstagramReelCreator';
+import VideoCreationPanel from './components/VideoCreationPanel';
 
 function App() {
   const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'error'>('checking');
@@ -12,7 +12,6 @@ function App() {
   const [selectedCourse, setSelectedCourse] = useState<number | null>(null);
   const [questionCount, setQuestionCount] = useState<number>(0);
   const [sampleQuestion, setSampleQuestion] = useState<Question | null>(null);
-  const [examName, setExamName] = useState<string>('');
 
   useEffect(() => {
     checkConnection();
@@ -48,16 +47,6 @@ function App() {
 
   const loadCourses = async (examId: number) => {
     try {
-      const { data: examData } = await supabase
-        .from('exams')
-        .select('name')
-        .eq('id', examId)
-        .maybeSingle();
-
-      if (examData) {
-        setExamName(examData.name);
-      }
-
       const { data, error } = await supabase
         .from('courses')
         .select('*')
@@ -271,7 +260,7 @@ function App() {
             </div>
 
             {sampleQuestion && (
-              <InstagramReelCreator question={sampleQuestion} examName={examName} />
+              <VideoCreationPanel courseId={selectedCourse} question={sampleQuestion} />
             )}
           </div>
         )}
