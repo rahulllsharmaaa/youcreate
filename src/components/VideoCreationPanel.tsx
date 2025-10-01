@@ -315,9 +315,132 @@ Make the script conversational, engaging, and suitable for voice-over. Use simpl
       setGeneratedAudio(null);
       setVideoRecord(updated);
       await loadAvailableVideos();
+
+      await generateCaptionsAutomatically(updated);
     } catch (err: any) {
       console.error('Save audio error:', err);
       setError(err.message || 'Failed to save audio');
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const generateCaptionsAutomatically = async (videoData: VideoRecord) => {
+    if (!videoData.audio_url || !videoData.script) {
+      return;
+    }
+
+    setLoading('captions');
+    setError(null);
+
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const response = await fetch(`${supabaseUrl}/functions/v1/generate-captions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
+        },
+        body: JSON.stringify({
+          video_id: videoData.id,
+          audio_url: videoData.audio_url,
+          script: videoData.script
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(`Caption generation failed: ${errorData.error || response.statusText}`);
+      }
+
+      const result = await response.json();
+
+      if (!result.success || !result.captions) {
+        throw new Error('Invalid caption data received');
+      }
+
+      const { data: updated, error: updateError } = await supabase
+        .from('videos')
+        .update({
+          captions_data: result.captions,
+          status: 'captions_generated',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', videoData.id)
+        .select()
+        .single();
+
+      if (updateError) {
+        console.error('Database update error:', updateError);
+        throw new Error(`Failed to save captions: ${updateError.message}`);
+      }
+
+      setVideoRecord(updated);
+      await generateVideoAutomatically(updated);
+    } catch (err: any) {
+      console.error('Caption generation error:', err);
+      setError(err.message || 'Failed to generate captions');
+      setLoading(null);
+    }
+  };
+
+  const generateVideoAutomatically = async (videoData: VideoRecord) => {
+    if (!videoData.captions_data || !videoData.audio_url) {
+      return;
+    }
+
+    setLoading('video');
+    setError(null);
+
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const response = await fetch(`${supabaseUrl}/functions/v1/render-video`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
+        },
+        body: JSON.stringify({
+          video_id: videoData.id,
+          template_id: videoData.template_id || 1
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(`Video rendering failed: ${errorData.error || response.statusText}`);
+      }
+
+      const result = await response.json();
+
+      if (!result.success || !result.video_url) {
+        throw new Error('Invalid video URL received');
+      }
+
+      if (!result.has_python_backend) {
+        console.warn('Python backend not configured:', result.message);
+      }
+
+      const { data: updated, error: updateError } = await supabase
+        .from('videos')
+        .update({
+          video_url: result.video_url,
+          status: result.has_python_backend ? 'video_rendered' : 'render_pending',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', videoData.id)
+        .select()
+        .single();
+
+      if (updateError) {
+        console.error('Database update error:', updateError);
+        throw new Error(`Failed to save video: ${updateError.message}`);
+      }
+
+      setVideoRecord(updated);
+    } catch (err: any) {
+      console.error('Video rendering error:', err);
+      setError(err.message || 'Failed to render video');
     } finally {
       setLoading(null);
     }
@@ -621,23 +744,35 @@ Make the script conversational, engaging, and suitable for voice-over. Use simpl
                 <source src={generatedAudio.audioUrl} type="audio/mpeg" />
               </audio>
             </div>
-            <button
-              onClick={saveAudioToDatabase}
-              disabled={loading !== null}
-              className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-3 px-4 rounded-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {loading === 'saving-audio' ? (
-                <>
-                  <Loader className="w-5 h-5 animate-spin" />
-                  Saving to Supabase...
-                </>
-              ) : (
-                <>
-                  <CheckCircle className="w-5 h-5" />
-                  Save to Supabase
-                </>
-              )}
-            </button>
+            <div className="flex gap-3">
+              <a
+                href={generatedAudio.audioUrl}
+                download={`audio_${generatedAudio.videoId}.mp3`}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-lg transition-all flex items-center justify-center gap-2"
+              >
+                <Download className="w-5 h-5" />
+                Preview (Download)
+              </a>
+              <button
+                onClick={saveAudioToDatabase}
+                disabled={loading !== null}
+                className="flex-1 bg-green-600 hover:bg-green-700 text-white font-medium py-3 px-4 rounded-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {loading === 'saving-audio' || loading === 'captions' || loading === 'video' ? (
+                  <>
+                    <Loader className="w-5 h-5 animate-spin" />
+                    {loading === 'saving-audio' && 'Saving Audio...'}
+                    {loading === 'captions' && 'Generating Captions...'}
+                    {loading === 'video' && 'Rendering Video...'}
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="w-5 h-5" />
+                    Save to Supabase
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         )}
 
@@ -838,7 +973,7 @@ Make the script conversational, engaging, and suitable for voice-over. Use simpl
           <div className="mt-6 p-4 bg-green-900/20 border border-green-500 rounded-lg space-y-4">
             <h4 className="text-green-400 font-medium flex items-center gap-2">
               <CheckCircle className="w-5 h-5" />
-              Video Ready!
+              Complete Video Ready!
             </h4>
             <video controls className="w-full rounded-lg">
               <source src={videoRecord.video_url} type="video/mp4" />
@@ -846,23 +981,17 @@ Make the script conversational, engaging, and suitable for voice-over. Use simpl
             <div className="flex gap-3">
               <a
                 href={videoRecord.video_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-              >
-                <Play className="w-4 h-4" />
-                Open in New Tab
-              </a>
-              <a
-                href={videoRecord.video_url}
                 download={`video_${videoRecord.id}.mp4`}
-                className="flex items-center gap-2 px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+                className="flex-1 flex items-center justify-center gap-2 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
               >
                 <Download className="w-4 h-4" />
-                Download Video
+                Preview (Download)
               </a>
             </div>
-            <p className="text-slate-400 text-xs break-all">{videoRecord.video_url}</p>
+            <div className="p-3 bg-slate-700 rounded-lg">
+              <p className="text-slate-300 text-sm mb-2">Video saved to Supabase database</p>
+              <p className="text-slate-400 text-xs break-all">{videoRecord.video_url}</p>
+            </div>
           </div>
         )}
       </div>
