@@ -1,12 +1,5 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { FileText, Mic, Video, CheckCircle, Loader, AlertCircle, Download } from 'lucide-react';
-
-interface CaptionSegment {
-  start: number;
-  end: number;
-  text: string;
-  words: Array<{ word: string; start: number; end: number }>;
-}
 
 interface Question {
   id: number;
@@ -14,67 +7,186 @@ interface Question {
   options?: string;
   answer: string;
   solution?: string;
+  question_type?: string;
 }
 
 interface InstagramReelCreatorProps {
   question: Question;
   examName: string;
+  courseName: string;
 }
 
-export default function InstagramReelCreator({ question, examName }: InstagramReelCreatorProps) {
+const SCRIPT_VARIATIONS = [
+  {
+    intro: "Hello everyone, today we're solving a question for {exam} {course}.",
+    questionIntro: "So the question is:",
+    optionsIntro: "The options for this are:",
+    pauseText: "Try solving this yourself. I'll give you 5 seconds. 5, 4, 3, 2, 1.",
+    reveal: "Time's up! The answer and solution are on your screen.",
+    outro: "Want the complete roadmap for {exam} {course}? Follow and comment 'roadmap' and it will be in your DMs."
+  },
+  {
+    intro: "Hey everyone! Let's crack a {exam} {course} question together.",
+    questionIntro: "Here's the question:",
+    optionsIntro: "And here are your options:",
+    pauseText: "Pause and try it yourself. You have 5 seconds. 5, 4, 3, 2, 1.",
+    reveal: "Done! Check the answer and solution below.",
+    outro: "For complete {exam} {course} preparation, follow and comment 'guide'."
+  },
+  {
+    intro: "Welcome! Today's question is from {exam} {course}.",
+    questionIntro: "The question states:",
+    optionsIntro: "Options are:",
+    pauseText: "Give it a shot! 5 seconds starting now. 5, 4, 3, 2, 1.",
+    reveal: "Here's the answer with the solution.",
+    outro: "Need more {exam} {course} questions? Follow and comment '{exam}' for resources."
+  },
+  {
+    intro: "Hi there! Solving a {exam} {course} problem today.",
+    questionIntro: "Question:",
+    optionsIntro: "Your choices:",
+    pauseText: "Try solving it. Countdown: 5, 4, 3, 2, 1.",
+    reveal: "The correct answer and solution are displayed.",
+    outro: "Follow for daily {exam} {course} content and comment 'help' for study materials."
+  },
+  {
+    intro: "Hey! Let's solve this {exam} {course} question.",
+    questionIntro: "Here's what the question asks:",
+    optionsIntro: "The options:",
+    pauseText: "Think about it! 5 seconds. 5, 4, 3, 2, 1.",
+    reveal: "Answer revealed! Check the solution.",
+    outro: "Want more practice? Follow and drop '{exam}' in comments."
+  }
+];
+
+const VIDEO_TEMPLATES = [
+  {
+    name: 'Teal Gradient',
+    bg1: '#1a5f7a',
+    bg2: '#159895',
+    bg3: '#57c5b6',
+    headerBg: 'rgba(21, 152, 149, 0.3)',
+    headerColor: '#00fff5',
+    questionBg: 'rgba(255, 255, 255, 0.95)',
+    questionColor: '#1a1a1a',
+    optionBg: 'rgba(255, 255, 255, 0.9)',
+    optionBorder: '#ffa500',
+    accentColor: '#ffa500',
+    timerBg: 'rgba(21, 152, 149, 0.9)',
+    timerColor: '#ffffff'
+  },
+  {
+    name: 'Light Modern',
+    bg1: '#f5f5f5',
+    bg2: '#e0e0e0',
+    bg3: '#d0d0d0',
+    headerBg: 'rgba(32, 139, 139, 0.9)',
+    headerColor: '#ffffff',
+    questionBg: 'rgba(255, 255, 255, 0.95)',
+    questionColor: '#1a1a1a',
+    optionBg: 'rgba(255, 255, 255, 0.95)',
+    optionBorder: '#ff6b35',
+    accentColor: '#ff6b35',
+    timerBg: 'rgba(255, 107, 53, 0.9)',
+    timerColor: '#ffffff'
+  },
+  {
+    name: 'Dark Neon',
+    bg1: '#0a1128',
+    bg2: '#1a1a2e',
+    bg3: '#16213e',
+    headerBg: 'rgba(0, 255, 157, 0.2)',
+    headerColor: '#00ff9d',
+    questionBg: 'rgba(255, 255, 255, 0.95)',
+    questionColor: '#1a1a1a',
+    optionBg: 'rgba(34, 40, 49, 0.9)',
+    optionBorder: '#00ff9d',
+    accentColor: '#00ff9d',
+    timerBg: 'rgba(0, 255, 157, 0.9)',
+    timerColor: '#0a1128'
+  },
+  {
+    name: 'Orange Sunset',
+    bg1: '#f77062',
+    bg2: '#fe5196',
+    bg3: '#ffb997',
+    headerBg: 'rgba(254, 81, 150, 0.3)',
+    headerColor: '#ffffff',
+    questionBg: 'rgba(255, 255, 255, 0.95)',
+    questionColor: '#1a1a1a',
+    optionBg: 'rgba(255, 255, 255, 0.9)',
+    optionBorder: '#fe5196',
+    accentColor: '#fe5196',
+    timerBg: 'rgba(254, 81, 150, 0.9)',
+    timerColor: '#ffffff'
+  }
+];
+
+export default function InstagramReelCreator({ question, examName, courseName }: InstagramReelCreatorProps) {
   const [script, setScript] = useState<string>('');
-  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [audioUrl, setAudioUrl] = useState<string>('');
-  const [captions, setCaptions] = useState<CaptionSegment[]>([]);
-  const [videoBlob, setVideoBlob] = useState<Blob | null>(null);
   const [videoUrl, setVideoUrl] = useState<string>('');
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState<number>(1);
+  const [selectedTemplate, setSelectedTemplate] = useState(0);
+  const [progress, setProgress] = useState(0);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const GEMINI_API_KEY = 'AIzaSyDgShKEEeX9viEQ90JHAUBfwQqlu0c9rBw';
   const VOICE_API_KEY = 'sk_e7983a84b66dc07658f0286b863641fe7e87d7a93aca7c15';
   const VOICE_ID = '21m00Tcm4TlvDq8ikWAM';
+
+  const cleanMathematicalText = (text: string): string => {
+    return text
+      .replace(/\\/g, ' ')
+      .replace(/\{|\}/g, ' ')
+      .replace(/\[|\]/g, ' ')
+      .replace(/\^/g, ' to the power ')
+      .replace(/_/g, ' ')
+      .replace(/matrix/gi, 'matrix with elements')
+      .replace(/\bdet\b/gi, 'determinant')
+      .replace(/\bint\b/gi, 'integral')
+      .replace(/\d+x\d+/g, (match) => {
+        const [rows, cols] = match.split('x');
+        return `${rows} by ${cols}`;
+      })
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
 
   const generateScript = async () => {
     setLoading('script');
     setError(null);
 
     try {
-      const prompt = `Create an engaging educational video script for Instagram Reels. Follow this exact structure:
+      const variation = SCRIPT_VARIATIONS[Math.floor(Math.random() * SCRIPT_VARIATIONS.length)];
 
-1. Start with: "Hello everyone, today we are going to solve a question for ${examName} entrance exam."
-2. Say: "So the question says:" then read the question statement word by word
-3. For MCQ/MSQ questions, read each option clearly: "Option A: [text], Option B: [text]" etc.
-4. After reading the question and options, say: "Try solving this question on your own. I'll give you 5 seconds." [PAUSE: 5 seconds]
-5. Then reveal: "The answer is: ${question.answer}"
-6. Finally explain the solution: ${question.solution || 'Provide a clear explanation'}
-7. End with: "If you are looking for a complete guide for ${examName} or more practice questions and guidance, follow and comment ${examName} and it will be in your DMs."
+      const questionText = cleanMathematicalText(question.question_statement);
+      const hasOptions = question.options && (question.question_type === 'MCQ' || question.question_type === 'MSQ');
 
-Question: ${question.question_statement}
-${question.options ? `Options: ${question.options}` : ''}
-Answer: ${question.answer}
-${question.solution ? `Solution: ${question.solution}` : ''}
+      let optionsText = '';
+      if (hasOptions && question.options) {
+        const optionsList = question.options.split(',').map(opt => opt.trim());
+        optionsText = optionsList.map((opt, idx) => {
+          const letter = String.fromCharCode(65 + idx);
+          return `Option ${letter}: ${cleanMathematicalText(opt)}`;
+        }).join('. ');
+      }
 
-Make the script conversational, engaging, and suitable for voice-over. Use simple language that sounds natural when spoken.`;
+      const scriptParts = [
+        variation.intro.replace('{exam}', examName).replace('{course}', courseName),
+        variation.questionIntro,
+        questionText,
+        hasOptions ? variation.optionsIntro : '',
+        hasOptions ? optionsText : '',
+        variation.pauseText,
+        variation.reveal,
+        variation.outro.replace(/{exam}/g, examName).replace(/{course}/g, courseName)
+      ].filter(Boolean);
 
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_API_KEY}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }]
-        })
-      });
-
-      if (!response.ok) throw new Error('Failed to generate script');
-
-      const data = await response.json();
-      const generatedScript = data.candidates[0]?.content?.parts[0]?.text;
-
-      if (!generatedScript) throw new Error('No script generated');
+      const generatedScript = scriptParts.join(' ');
 
       setScript(generatedScript);
       setCurrentStep(2);
@@ -92,12 +204,6 @@ Make the script conversational, engaging, and suitable for voice-over. Use simpl
     setError(null);
 
     try {
-      const cleanScript = script
-        .replace(/\[PAUSE:.*?\]/g, '')
-        .replace(/\[COUNTDOWN:.*?\]/g, '')
-        .replace(/\*\*/g, '')
-        .trim();
-
       const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`, {
         method: 'POST',
         headers: {
@@ -105,7 +211,7 @@ Make the script conversational, engaging, and suitable for voice-over. Use simpl
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          text: cleanScript,
+          text: script,
           model_id: 'eleven_monolingual_v1',
           voice_settings: {
             stability: 0.5,
@@ -125,11 +231,8 @@ Make the script conversational, engaging, and suitable for voice-over. Use simpl
       if (blob.size === 0) throw new Error('Generated audio is empty');
 
       const url = URL.createObjectURL(blob);
-      setAudioBlob(blob);
       setAudioUrl(url);
       setCurrentStep(3);
-
-      await generateCaptionsFromScript(cleanScript);
     } catch (err: any) {
       setError(err.message || 'Failed to generate audio');
     } finally {
@@ -137,56 +240,59 @@ Make the script conversational, engaging, and suitable for voice-over. Use simpl
     }
   };
 
-  const generateCaptionsFromScript = async (scriptText: string) => {
-    const words = scriptText.split(/\s+/).filter(word => word.length > 0);
-    const wordsPerSecond = 2.5;
-    const secondsPerWord = 1 / wordsPerSecond;
+  const wrapText = (ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] => {
+    const words = text.split(' ');
+    const lines: string[] = [];
+    let currentLine = '';
 
-    const generatedCaptions: CaptionSegment[] = [];
-    let currentTime = 0;
-    let currentPhrase: string[] = [];
-    let phraseStartTime = 0;
+    for (const word of words) {
+      const testLine = currentLine ? `${currentLine} ${word}` : word;
+      const metrics = ctx.measureText(testLine);
 
-    for (let i = 0; i < words.length; i++) {
-      const word = words[i];
-      currentPhrase.push(word);
-
-      if (currentPhrase.length >= 5 || word.match(/[.!?]$/) || i === words.length - 1) {
-        const text = currentPhrase.join(' ');
-        const duration = currentPhrase.length * secondsPerWord;
-
-        generatedCaptions.push({
-          text: text,
-          start: parseFloat(phraseStartTime.toFixed(2)),
-          end: parseFloat((phraseStartTime + duration).toFixed(2)),
-          words: currentPhrase.map((w, idx) => ({
-            word: w,
-            start: parseFloat((phraseStartTime + (idx * secondsPerWord)).toFixed(2)),
-            end: parseFloat((phraseStartTime + ((idx + 1) * secondsPerWord)).toFixed(2))
-          }))
-        });
-
-        currentTime = phraseStartTime + duration;
-        phraseStartTime = currentTime;
-        currentPhrase = [];
+      if (metrics.width > maxWidth && currentLine) {
+        lines.push(currentLine);
+        currentLine = word;
+      } else {
+        currentLine = testLine;
       }
     }
+    if (currentLine) lines.push(currentLine);
+    return lines;
+  };
 
-    setCaptions(generatedCaptions);
-    setCurrentStep(4);
+  const drawRoundedRect = (
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    radius: number
+  ) => {
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+    ctx.lineTo(x + radius, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.closePath();
   };
 
   const createVideoWithCaptions = async () => {
-    if (!audioUrl || captions.length === 0) return;
+    if (!audioUrl) return;
 
     setLoading('video');
     setError(null);
+    setProgress(0);
 
     try {
       const canvas = canvasRef.current;
       if (!canvas) throw new Error('Canvas not available');
 
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext('2d', { alpha: false });
       if (!ctx) throw new Error('Canvas context not available');
 
       canvas.width = 1080;
@@ -201,6 +307,11 @@ Make the script conversational, engaging, and suitable for voice-over. Use simpl
       const fps = 30;
       const totalFrames = Math.ceil(duration * fps);
 
+      const template = VIDEO_TEMPLATES[selectedTemplate];
+
+      const hasOptions = question.options && (question.question_type === 'MCQ' || question.question_type === 'MSQ');
+      const optionsList = hasOptions ? question.options!.split(',').map(opt => opt.trim()) : [];
+
       const stream = canvas.captureStream(fps);
       const mediaRecorder = new MediaRecorder(stream, {
         mimeType: 'video/webm;codecs=vp9',
@@ -212,82 +323,147 @@ Make the script conversational, engaging, and suitable for voice-over. Use simpl
 
       mediaRecorder.start();
 
-      const templates = [
-        { bg: '#1a1a2e', accent: '#16213e', text: '#eaeaea', highlight: '#0f3460' },
-        { bg: '#0f0e17', accent: '#ff8906', text: '#fffffe', highlight: '#f25f4c' },
-        { bg: '#16161a', accent: '#7f5af0', text: '#fffffe', highlight: '#2cb67d' },
-        { bg: '#232946', accent: '#b8c1ec', text: '#fffffe', highlight: '#eebbc3' },
-        { bg: '#004643', accent: '#abd1c6', text: '#fffffe', highlight: '#f9bc60' }
-      ];
+      const wordsPerSecond = 2.5;
+      const scriptWords = script.split(/\s+/);
+      const totalDuration = scriptWords.length / wordsPerSecond;
 
-      const template = templates[Math.floor(Math.random() * templates.length)];
+      const pauseStart = totalDuration * 0.6;
+      const pauseDuration = 5;
+      const revealStart = pauseStart + pauseDuration;
 
       for (let frame = 0; frame < totalFrames; frame++) {
         const currentTime = frame / fps;
+        setProgress(Math.round((frame / totalFrames) * 100));
 
-        ctx.fillStyle = template.bg;
+        const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+        gradient.addColorStop(0, template.bg1);
+        gradient.addColorStop(0.5, template.bg2);
+        gradient.addColorStop(1, template.bg3);
+        ctx.fillStyle = gradient;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        ctx.fillStyle = template.accent;
-        ctx.fillRect(0, 0, canvas.width, 200);
-        ctx.fillRect(0, canvas.height - 200, canvas.width, 200);
+        ctx.save();
+        drawRoundedRect(ctx, 140, 60, 800, 120, 60);
+        ctx.fillStyle = template.headerBg;
+        ctx.fill();
+        ctx.restore();
 
-        ctx.fillStyle = template.text;
-        ctx.font = 'bold 48px Arial';
+        ctx.fillStyle = template.headerColor;
+        ctx.font = 'bold 72px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText(examName, canvas.width / 2, 120);
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`${examName} ${courseName}`, canvas.width / 2, 120);
 
-        const currentCaption = captions.find(
-          cap => currentTime >= cap.start && currentTime <= cap.end
-        );
+        if (currentTime < pauseStart) {
+          ctx.save();
+          drawRoundedRect(ctx, 80, 300, 920, 400, 30);
+          ctx.fillStyle = template.questionBg;
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+          ctx.shadowBlur = 20;
+          ctx.shadowOffsetY = 10;
+          ctx.fill();
+          ctx.restore();
 
-        if (currentCaption) {
-          const words = currentCaption.text.split(' ');
-          const wordsPerLine = 4;
-          const lines: string[] = [];
-
-          for (let i = 0; i < words.length; i += wordsPerLine) {
-            lines.push(words.slice(i, i + wordsPerLine).join(' '));
-          }
-
-          ctx.font = 'bold 64px Arial';
-          const lineHeight = 90;
-          const startY = canvas.height / 2 - ((lines.length - 1) * lineHeight) / 2;
-
-          lines.forEach((line, lineIndex) => {
-            const y = startY + lineIndex * lineHeight;
-
-            ctx.fillStyle = template.accent;
-            ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
-            ctx.shadowBlur = 20;
-            ctx.shadowOffsetX = 4;
-            ctx.shadowOffsetY = 4;
-
-            const padding = 40;
-            const metrics = ctx.measureText(line);
-            const textWidth = metrics.width;
-            const boxX = (canvas.width - textWidth) / 2 - padding;
-            const boxY = y - 50;
-            const boxWidth = textWidth + padding * 2;
-            const boxHeight = 80;
-
-            ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
-
-            ctx.shadowColor = 'transparent';
-            ctx.shadowBlur = 0;
-            ctx.fillStyle = template.text;
-            ctx.fillText(line, canvas.width / 2, y);
+          ctx.fillStyle = template.questionColor;
+          ctx.font = 'bold 48px Arial';
+          ctx.textAlign = 'center';
+          const questionLines = wrapText(ctx, question.question_statement, 840);
+          questionLines.forEach((line, idx) => {
+            ctx.fillText(line, canvas.width / 2, 400 + idx * 60);
           });
 
-          const currentWord = currentCaption.words.find(
-            w => currentTime >= w.start && currentTime <= w.end
-          );
+          if (hasOptions) {
+            optionsList.forEach((option, idx) => {
+              const y = 800 + idx * 180;
+              const letter = String.fromCharCode(65 + idx);
 
-          if (currentWord) {
-            ctx.fillStyle = template.highlight;
-            ctx.font = 'bold 72px Arial';
-            const wordY = canvas.height / 2 + 150;
-            ctx.fillText(currentWord.word, canvas.width / 2, wordY);
+              ctx.save();
+              drawRoundedRect(ctx, 100, y, 880, 140, 30);
+              ctx.fillStyle = template.optionBg;
+              ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
+              ctx.shadowBlur = 15;
+              ctx.shadowOffsetY = 8;
+              ctx.fill();
+              ctx.strokeStyle = template.optionBorder;
+              ctx.lineWidth = 4;
+              ctx.stroke();
+              ctx.restore();
+
+              ctx.save();
+              ctx.beginPath();
+              ctx.arc(180, y + 70, 50, 0, Math.PI * 2);
+              ctx.fillStyle = template.accentColor;
+              ctx.fill();
+              ctx.restore();
+
+              ctx.fillStyle = '#ffffff';
+              ctx.textAlign = 'center';
+              ctx.font = 'bold 56px Arial';
+              ctx.fillText(letter, 180, y + 82);
+
+              ctx.fillStyle = template.questionColor;
+              ctx.font = '44px Arial';
+              ctx.textAlign = 'left';
+              const optionLines = wrapText(ctx, option, 640);
+              optionLines.forEach((line, lineIdx) => {
+                ctx.fillText(line, 260, y + 60 + lineIdx * 50);
+              });
+            });
+          }
+        } else if (currentTime >= pauseStart && currentTime < revealStart) {
+          const countdown = Math.ceil(revealStart - currentTime);
+
+          ctx.save();
+          drawRoundedRect(ctx, 340, 800, 400, 200, 40);
+          ctx.fillStyle = template.timerBg;
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
+          ctx.shadowBlur = 25;
+          ctx.shadowOffsetY = 12;
+          ctx.fill();
+          ctx.restore();
+
+          ctx.fillStyle = template.timerColor;
+          ctx.font = 'bold 120px Arial';
+          ctx.textAlign = 'center';
+          ctx.fillText(countdown.toString(), canvas.width / 2, 900);
+
+          ctx.font = 'bold 40px Arial';
+          ctx.fillText('seconds', canvas.width / 2, 970);
+        } else {
+          ctx.save();
+          drawRoundedRect(ctx, 80, 300, 920, 200, 30);
+          ctx.fillStyle = template.questionBg;
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+          ctx.shadowBlur = 20;
+          ctx.shadowOffsetY = 10;
+          ctx.fill();
+          ctx.restore();
+
+          ctx.fillStyle = template.questionColor;
+          ctx.font = 'bold 52px Arial';
+          ctx.textAlign = 'center';
+          ctx.fillText('Correct Answer: ' + question.answer, canvas.width / 2, 400);
+
+          if (question.solution) {
+            ctx.save();
+            drawRoundedRect(ctx, 80, 550, 920, 800, 30);
+            ctx.fillStyle = template.questionBg;
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+            ctx.shadowBlur = 20;
+            ctx.shadowOffsetY = 10;
+            ctx.fill();
+            ctx.restore();
+
+            ctx.fillStyle = template.accentColor;
+            ctx.font = 'bold 48px Arial';
+            ctx.fillText('Solution:', canvas.width / 2, 620);
+
+            ctx.fillStyle = template.questionColor;
+            ctx.font = '38px Arial';
+            const solutionLines = wrapText(ctx, question.solution, 840);
+            solutionLines.forEach((line, idx) => {
+              ctx.fillText(line, canvas.width / 2, 700 + idx * 50);
+            });
           }
         }
 
@@ -301,11 +477,11 @@ Make the script conversational, engaging, and suitable for voice-over. Use simpl
       });
 
       const videoBlob = new Blob(chunks, { type: 'video/webm' });
-      const videoUrl = URL.createObjectURL(videoBlob);
+      const videoUrlResult = URL.createObjectURL(videoBlob);
 
-      setVideoBlob(videoBlob);
-      setVideoUrl(videoUrl);
-      setCurrentStep(5);
+      setVideoUrl(videoUrlResult);
+      setCurrentStep(4);
+      setProgress(100);
     } catch (err: any) {
       setError(err.message || 'Failed to create video');
     } finally {
@@ -317,7 +493,7 @@ Make the script conversational, engaging, and suitable for voice-over. Use simpl
     if (!videoUrl) return;
     const a = document.createElement('a');
     a.href = videoUrl;
-    a.download = `instagram_reel_${question.id}.webm`;
+    a.download = `${examName}_${courseName}_${question.id}.webm`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -334,6 +510,31 @@ Make the script conversational, engaging, and suitable for voice-over. Use simpl
         </div>
       )}
 
+      <div className="mb-6">
+        <label className="text-white text-sm font-medium mb-3 block">Select Template:</label>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {VIDEO_TEMPLATES.map((template, idx) => (
+            <button
+              key={idx}
+              onClick={() => setSelectedTemplate(idx)}
+              className={`p-4 rounded-lg border-2 transition-all ${
+                selectedTemplate === idx
+                  ? 'border-blue-500 ring-2 ring-blue-400'
+                  : 'border-slate-600 hover:border-slate-500'
+              }`}
+              style={{
+                background: `linear-gradient(135deg, ${template.bg1}, ${template.bg2}, ${template.bg3})`,
+                minHeight: '100px'
+              }}
+            >
+              <div className="text-white text-sm font-medium bg-black/30 px-2 py-1 rounded">
+                {template.name}
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="space-y-4">
         <button
           onClick={generateScript}
@@ -348,7 +549,7 @@ Make the script conversational, engaging, and suitable for voice-over. Use simpl
             <FileText className="w-5 h-5" />
             <div className="text-left">
               <div className="font-medium">1. Generate Script</div>
-              <div className="text-sm opacity-80">AI-powered script generation</div>
+              <div className="text-sm opacity-80">Smart AI voice script</div>
             </div>
           </div>
           {loading === 'script' ? (
@@ -359,7 +560,7 @@ Make the script conversational, engaging, and suitable for voice-over. Use simpl
         </button>
 
         {script && (
-          <div className="ml-8 p-4 bg-slate-700 rounded-lg max-h-60 overflow-y-auto">
+          <div className="ml-8 p-4 bg-slate-700 rounded-lg max-h-48 overflow-y-auto">
             <p className="text-slate-300 text-sm whitespace-pre-wrap">{script}</p>
           </div>
         )}
@@ -376,8 +577,8 @@ Make the script conversational, engaging, and suitable for voice-over. Use simpl
           <div className="flex items-center gap-3">
             <Mic className="w-5 h-5" />
             <div className="text-left">
-              <div className="font-medium">2. Generate Audio & Captions</div>
-              <div className="text-sm opacity-80">TTS voice-over + timing</div>
+              <div className="font-medium">2. Generate Voice-Over</div>
+              <div className="text-sm opacity-80">Professional TTS audio</div>
             </div>
           </div>
           {loading === 'audio' ? (
@@ -388,21 +589,18 @@ Make the script conversational, engaging, and suitable for voice-over. Use simpl
         </button>
 
         {audioUrl && (
-          <div className="ml-8 p-4 bg-slate-700 rounded-lg space-y-3">
+          <div className="ml-8 p-4 bg-slate-700 rounded-lg">
             <audio controls className="w-full">
               <source src={audioUrl} type="audio/mpeg" />
             </audio>
-            {captions.length > 0 && (
-              <p className="text-green-400 text-sm">Generated {captions.length} caption segments</p>
-            )}
           </div>
         )}
 
         <button
           onClick={createVideoWithCaptions}
-          disabled={!audioUrl || captions.length === 0 || loading !== null || currentStep > 4}
+          disabled={!audioUrl || loading !== null || currentStep > 3}
           className={`w-full flex items-center justify-between p-4 rounded-lg transition-all ${
-            currentStep > 4
+            currentStep > 3
               ? 'bg-green-600 text-white'
               : 'bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50'
           }`}
@@ -411,15 +609,27 @@ Make the script conversational, engaging, and suitable for voice-over. Use simpl
             <Video className="w-5 h-5" />
             <div className="text-left">
               <div className="font-medium">3. Create Instagram Reel</div>
-              <div className="text-sm opacity-80">1080x1920 with caption highlighting</div>
+              <div className="text-sm opacity-80">1080x1920 professional video</div>
             </div>
           </div>
           {loading === 'video' ? (
             <Loader className="w-5 h-5 animate-spin" />
-          ) : currentStep > 4 ? (
+          ) : currentStep > 3 ? (
             <CheckCircle className="w-5 h-5" />
           ) : null}
         </button>
+
+        {loading === 'video' && (
+          <div className="ml-8">
+            <div className="bg-slate-700 rounded-full h-4 overflow-hidden">
+              <div
+                className="bg-blue-600 h-full transition-all duration-300"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <p className="text-slate-400 text-sm mt-2 text-center">{progress}% completed</p>
+          </div>
+        )}
 
         {videoUrl && (
           <div className="mt-6 p-4 bg-green-900/20 border border-green-500 rounded-lg space-y-4">
@@ -427,12 +637,12 @@ Make the script conversational, engaging, and suitable for voice-over. Use simpl
               <CheckCircle className="w-5 h-5" />
               Instagram Reel Ready!
             </h4>
-            <video ref={videoRef} controls className="w-full rounded-lg max-h-96">
+            <video ref={videoRef} controls className="w-full rounded-lg" style={{ maxHeight: '500px' }}>
               <source src={videoUrl} type="video/webm" />
             </video>
             <button
               onClick={downloadVideo}
-              className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+              className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-medium"
             >
               <Download className="w-5 h-5" />
               Download Instagram Reel
