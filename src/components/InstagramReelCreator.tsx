@@ -36,7 +36,7 @@ export default function InstagramReelCreator({ question, examName }: InstagramRe
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const GEMINI_API_KEY = 'AIzaSyDgShKEEeX9viEQ90JHAUBfwQqlu0c9rBw';
-  const VOICE_API_KEY = 'sk_e7983a84b66dc07658f0286b863641fe7e87d7a93aca7c15';
+  const VOICE_API_KEY = 'sk_7c817fd030e450f7c14543508e2b31b73b33233e18f59c6c';
   const VOICE_ID = '21m00Tcm4TlvDq8ikWAM';
 
   const generateScript = async () => {
