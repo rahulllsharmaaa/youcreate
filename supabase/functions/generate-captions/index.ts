@@ -23,48 +23,71 @@ Deno.serve(async (req: Request) => {
   try {
     const { video_id, audio_url, script }: CaptionRequest = await req.json();
 
-    const words = script.split(/\s+/).filter(word => word.length > 0);
-    const wordsPerSecond = 2.5;
-    const secondsPerWord = 1 / wordsPerSecond;
-    
-    const captions = [];
+    // Parse script to identify different sections
+    const sections = [];
     let currentTime = 0;
-    let currentPhrase = [];
-    let phraseStartTime = 0;
-    
-    for (let i = 0; i < words.length; i++) {
-      const word = words[i];
-      currentPhrase.push(word);
-      
-      if (currentPhrase.length >= 5 || 
-          word.match(/[.!?]$/) || 
-          i === words.length - 1) {
-        
-        const text = currentPhrase.join(' ');
-        const duration = currentPhrase.length * secondsPerWord;
-        
-        captions.push({
-          text: text,
-          start: phraseStartTime.toFixed(2),
-          end: (phraseStartTime + duration).toFixed(2),
-          words: currentPhrase.map((w, idx) => ({
-            word: w,
-            start: (phraseStartTime + (idx * secondsPerWord)).toFixed(2),
-            end: (phraseStartTime + ((idx + 1) * secondsPerWord)).toFixed(2)
-          }))
-        });
-        
-        currentTime = phraseStartTime + duration;
-        phraseStartTime = currentTime;
-        currentPhrase = [];
-      }
+
+    // Split script by countdown marker if present
+    const hasCountdown = script.includes('5... 4... 3... 2... 1');
+    const scriptParts = script.split('5... 4... 3... 2... 1');
+
+    if (scriptParts.length === 2) {
+      // Pre-timer section
+      const preTimerWords = scriptParts[0].trim().split(/\s+/).length;
+      const preTimerDuration = preTimerWords / 2.5; // 2.5 words per second
+
+      sections.push({
+        type: 'question',
+        text: scriptParts[0].trim(),
+        start: currentTime.toFixed(2),
+        end: (currentTime + preTimerDuration).toFixed(2)
+      });
+
+      currentTime += preTimerDuration;
+
+      // Countdown section (5 seconds)
+      sections.push({
+        type: 'timer',
+        text: '5... 4... 3... 2... 1...',
+        start: currentTime.toFixed(2),
+        end: (currentTime + 5).toFixed(2)
+      });
+
+      currentTime += 5;
+
+      // Post-timer section
+      const postTimerWords = scriptParts[1].trim().split(/\s+/).length;
+      const postTimerDuration = postTimerWords / 2.5;
+
+      sections.push({
+        type: 'answer',
+        text: scriptParts[1].trim(),
+        start: currentTime.toFixed(2),
+        end: (currentTime + postTimerDuration).toFixed(2)
+      });
+
+      currentTime += postTimerDuration;
+    } else {
+      // No countdown, simple duration calculation
+      const words = script.split(/\s+/).filter(word => word.length > 0);
+      const duration = words.length / 2.5;
+
+      sections.push({
+        type: 'full',
+        text: script,
+        start: '0.00',
+        end: duration.toFixed(2)
+      });
+
+      currentTime = duration;
     }
 
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         success: true,
-        captions: captions,
-        total_duration: currentTime.toFixed(2)
+        captions: sections,
+        total_duration: currentTime.toFixed(2),
+        has_timer: hasCountdown
       }),
       {
         headers: {

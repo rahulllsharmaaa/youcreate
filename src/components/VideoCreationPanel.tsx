@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Question } from '../types/database';
 import { FileText, Mic, Captions, Video, CheckCircle, Loader, AlertCircle, Download, Play } from 'lucide-react';
+import { generateScript, getRandomTemplate, SCRIPT_TEMPLATES } from '../utils/scriptGenerator';
+import { VIDEO_TEMPLATES } from '../utils/videoTemplates';
 
 interface VideoCreationPanelProps {
   courseId: number;
@@ -52,6 +54,8 @@ export default function VideoCreationPanel({ courseId, question }: VideoCreation
   const [selectedContent, setSelectedContent] = useState<'script' | 'captions' | null>(null);
   const [showScriptPreview, setShowScriptPreview] = useState(false);
   const [showCaptionPreview, setShowCaptionPreview] = useState(false);
+  const [selectedScriptTemplate, setSelectedScriptTemplate] = useState<number>(0);
+  const [selectedVideoTemplate, setSelectedVideoTemplate] = useState<number>(1);
 
   const GEMINI_API_KEY = 'AIzaSyDgShKEEeX9viEQ90JHAUBfwQqlu0c9rBw';
   const VOICE_API_KEY = 'sk_e7983a84b66dc07658f0286b863641fe7e87d7a93aca7c15';
@@ -88,59 +92,45 @@ export default function VideoCreationPanel({ courseId, question }: VideoCreation
     }
   };
 
-  const generateScript = async () => {
+  const generateScriptLocal = async () => {
     setLoading('script');
     setError(null);
 
     try {
-      // First, get the exam name
+      // Get exam name and course name
       const { data: courseData } = await supabase
         .from('courses')
-        .select('exam_id')
+        .select('exam_id, name')
         .eq('id', courseId)
         .maybeSingle();
 
       let examName = 'this exam';
-      if (courseData?.exam_id) {
-        const { data: examData } = await supabase
-          .from('exams')
-          .select('name')
-          .eq('id', courseData.exam_id)
-          .maybeSingle();
-        if (examData) examName = examData.name;
+      let courseName = 'this course';
+
+      if (courseData) {
+        courseName = courseData.name;
+        if (courseData.exam_id) {
+          const { data: examData } = await supabase
+            .from('exams')
+            .select('name')
+            .eq('id', courseData.exam_id)
+            .maybeSingle();
+          if (examData) examName = examData.name;
+        }
       }
 
-      const prompt = `Create an engaging educational video script for this question. Follow this exact structure:
-
-1. Start with: "Hello everyone, today we are going to solve a question for ${examName} entrance exam."
-2. Say: "So the question says:" then read the question statement word by word
-3. For MCQ/MSQ questions, read each option clearly: "Option A: [text], Option B: [text]" etc.
-4. After reading the question and options, say: "Try solving this question on your own. I'll give you 5 seconds." [PAUSE 5 SECONDS - indicate with [COUNTDOWN: 5...4...3...2...1]]
-5. Then reveal: "The answer is: ${question.answer}"
-6. Finally explain the solution: ${question.solution || 'Provide a clear explanation'}
-7. End with: "If you are looking for a complete guide for ${examName} or more practice questions and guidance, follow and comment ${examName} and it will be in your DMs."
-
-Question: ${question.question_statement}
-${question.options ? `Options: ${question.options}` : ''}
-Answer: ${question.answer}
-${question.solution ? `Solution: ${question.solution}` : ''}
-
-Make the script conversational, engaging, and suitable for voice-over. Use simple language that sounds natural when spoken. The script should be read exactly as written by our text-to-speech system.`;
-
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_API_KEY}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }]
-        })
-      });
-
-      if (!response.ok) throw new Error('Failed to generate script');
-
-      const data = await response.json();
-      const script = data.candidates[0]?.content?.parts[0]?.text;
-
-      if (!script) throw new Error('No script generated');
+      // Generate script using template system
+      const templateId = selectedScriptTemplate === 0 ? undefined : selectedScriptTemplate;
+      const script = generateScript(
+        examName,
+        courseName,
+        question.question_statement,
+        question.question_type,
+        question.options || null,
+        question.answer,
+        question.solution || null,
+        templateId
+      );
 
       setGeneratedScript({ text: script, examName });
     } catch (err: any) {
@@ -164,7 +154,7 @@ Make the script conversational, engaging, and suitable for voice-over. Use simpl
           question_id: question.id,
           script: generatedScript.text,
           status: 'script_generated',
-          template_id: Math.floor(Math.random() * 5) + 1
+          template_id: selectedVideoTemplate
         })
         .select()
         .single();
@@ -641,12 +631,43 @@ Make the script conversational, engaging, and suitable for voice-over. Use simpl
         </div>
       )}
 
+      {/* Template Selection */}
+      <div className="mb-6 grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-slate-300">Script Style</label>
+          <select
+            value={selectedScriptTemplate}
+            onChange={(e) => setSelectedScriptTemplate(Number(e.target.value))}
+            className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={videoRecord !== null}
+          >
+            <option value={0}>Random (Varies each time)</option>
+            {SCRIPT_TEMPLATES.map(template => (
+              <option key={template.id} value={template.id}>{template.name}</option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-slate-300">Video Template</label>
+          <select
+            value={selectedVideoTemplate}
+            onChange={(e) => setSelectedVideoTemplate(Number(e.target.value))}
+            className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={videoRecord !== null}
+          >
+            {VIDEO_TEMPLATES.map(template => (
+              <option key={template.id} value={template.id}>{template.name}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       <div className="space-y-4">
         {/* Step 1: Generate Script */}
         <div className="flex items-center gap-4">
           <div className="flex-1">
             <button
-              onClick={generateScript}
+              onClick={generateScriptLocal}
               disabled={loading !== null || videoRecord !== null}
               className={`w-full flex items-center justify-between p-4 rounded-lg transition-all ${
                 getStepStatus('script') === 'completed'
