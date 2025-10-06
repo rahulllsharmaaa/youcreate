@@ -97,44 +97,69 @@ export default function VideoCreationPanel({ courseId, question }: VideoCreation
     setError(null);
 
     try {
+      console.log('Starting script generation...');
+      console.log('Question data:', question);
+
       // Get exam name and course name
-      const { data: courseData } = await supabase
+      const { data: courseData, error: courseError } = await supabase
         .from('courses')
         .select('exam_id, name')
         .eq('id', courseId)
         .maybeSingle();
+
+      if (courseError) {
+        console.error('Course fetch error:', courseError);
+        throw new Error(`Failed to fetch course: ${courseError.message}`);
+      }
 
       let examName = 'this exam';
       let courseName = 'this course';
 
       if (courseData) {
         courseName = courseData.name;
+        console.log('Course name:', courseName);
+
         if (courseData.exam_id) {
-          const { data: examData } = await supabase
+          const { data: examData, error: examError } = await supabase
             .from('exams')
             .select('name')
             .eq('id', courseData.exam_id)
             .maybeSingle();
-          if (examData) examName = examData.name;
+
+          if (examError) {
+            console.error('Exam fetch error:', examError);
+          } else if (examData) {
+            examName = examData.name;
+            console.log('Exam name:', examName);
+          }
         }
       }
 
       // Generate script using template system
       const templateId = selectedScriptTemplate === 0 ? undefined : selectedScriptTemplate;
+      console.log('Using template ID:', templateId);
+
       const script = generateScript(
         examName,
         courseName,
-        question.question_statement,
-        question.question_type,
+        question.question_statement || '',
+        question.question_type || 'mcq',
         question.options || null,
-        question.answer,
+        question.answer || '',
         question.solution || null,
         templateId
       );
 
+      console.log('Generated script:', script);
+
+      if (!script || script.trim().length === 0) {
+        throw new Error('Generated script is empty');
+      }
+
       setGeneratedScript({ text: script, examName });
     } catch (err: any) {
-      setError(err.message);
+      console.error('Script generation error:', err);
+      setError(err.message || 'Failed to generate script');
     } finally {
       setLoading(null);
     }
