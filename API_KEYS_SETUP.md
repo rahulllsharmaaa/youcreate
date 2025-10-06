@@ -4,7 +4,7 @@
 
 ### ✅ Gemini AI (Google)
 ```
-AIzaSyDgShKEEeX9viEQ90JHAUBfwQqlu0c9rBw
+AIzaSyCEc6soaKQLQTBzwJHr1OmIzzK5dp3_fLE
 ```
 - **Purpose**: Generate video scripts
 - **Used in**: VideoCreationPanel.tsx
